@@ -1,3 +1,5 @@
+import { WORKGROUP_SIZE } from '../constants';
+
 export function createVertices(device: GPUDevice) {
   /**
    * * The GPU cannot draw vertices with data from a JavaScript array.
@@ -27,7 +29,7 @@ export function createVertices(device: GPUDevice) {
   // Buffer cannot be changed after created. you can only change the content by calling `writeBuffer()`
   const vertexBuffer = device.createBuffer({
     label: 'Cell vertices', // Every single WebGPU object you create can be given an optional label for errors indicating
-    size: vertices.byteLength, // get familiar with byte-size math
+    size: vertices.byteLength,
     usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
   });
 
@@ -98,7 +100,8 @@ export function createShaders(device: GPUDevice) {
 
         let cellOffset = cell / grid * 2; // Compute the offset to cell
 
-
+        // state = 0 or 1.
+        // scale with state can change the cell state to 'on' or 'off'
         let gridPos = (input.pos * state + 1) / grid - 1 + cellOffset;
 
         var output: VertexOutput;
@@ -116,6 +119,7 @@ export function createShaders(device: GPUDevice) {
 
         let c = input.cell / grid;
 
+        // return vec4f(c, 1-c.x*c.y, 1);
         return vec4f(c, 1-c.x, 1);
       }
     `,
@@ -125,8 +129,6 @@ export function createShaders(device: GPUDevice) {
     cellShaderModule,
   };
 }
-
-export const WORKGROUP_SIZE = 8;
 
 export function createComputeShader(device: GPUDevice) {
   /**
@@ -196,6 +198,8 @@ export function createRenderPipeline(
 ) {
   const pipelineLayout = device.createPipelineLayout({
     label: 'Cell Pipeline Layout',
+    // bindGroupLayout should be placed according to its index.
+    // e.g.bindGroup(0) should be the first layout
     bindGroupLayouts: [bindGroupLayout],
   });
 
@@ -241,29 +245,4 @@ export function createComputePipeline(
   });
 
   return { simulationPipeline };
-}
-
-export function beginRenderPass(
-  device: GPUDevice,
-  context: GPUCanvasContext,
-  canvasFormat: GPUTextureFormat,
-  renderPassCommands: (context: GPUCanvasContext) => void,
-) {
-  // you should configure context before beginRenderPass
-  context.configure({
-    device: device,
-    format: canvasFormat, // this configures the texture format used in webgpu
-  });
-
-  `
-    Note: One big difference in how WebGPU works compared to WebGL is that
-    because canvas configuration is separate from device creation you can
-    have any number of canvases that are all being rendered by a single device!
-    This will make certain use cases, like multi-pane 3D editors, much easier to develop.
-  `;
-
-  /**
-   * * set render pipeline and other commands.
-   */
-  renderPassCommands(context);
 }

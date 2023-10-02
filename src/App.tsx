@@ -1,67 +1,68 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import './App.css';
-import { createWebGPU } from './render/create-web-gpu';
+import { GRID_SIZE, WORKGROUP_SIZE, setGridSize } from './constants';
+import { useWebGPU } from './hooks';
 import {
-  WORKGROUP_SIZE,
-  beginRenderPass,
   createComputePipeline,
   createComputeShader,
   createRenderPipeline,
   createShaders,
   createVertices,
 } from './render/geometry';
-import { GRID_SIZE, createBindGroup } from './render/grid';
+import { createBindGroup } from './render/grid';
 
 function App() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const [size, setSize] = useState(512);
+
   useEffect(() => {
-    main();
+    const { clientHeight } = document.documentElement;
+    const s = clientHeight - 10;
+    setSize(s);
+    setGridSize(Math.pow(s / 30, 2));
   }, []);
+
+  const { device, context } = useWebGPU();
+
+  useEffect(() => {
+    if (!device || !context) return;
+
+    main(device, context);
+
+    return () => {
+      device.destroy();
+    };
+  }, [device, context]);
 
   return (
     <>
-      <canvas id="canvas" width="512" height="512"></canvas>
+      <canvas ref={canvasRef} id="canvas" width={size} height={size}></canvas>
     </>
   );
 }
 
-const UPDATE_INTERVAL = 200; // Update every 200ms (5 times/sec)
 let step = 0; // Track how many simulation steps have been run
 
-async function main() {
-  // by using querySelector you can get a type guarantee for returned element.
-  const canvas = document.querySelector('canvas');
-  if (!canvas) {
-    throw new Error('canvas not found.');
-  }
-
-  /**
-   * To do this, first request a GPUCanvasContext from the canvas by calling canvas.getContext("webgpu").
-   * (This is the same call that you'd use to initialize Canvas 2D or WebGL contexts,
-   * using the 2d and webgl context types, respectively.)
-   * The context that it returns must then be associated with the device using the configure() method
-   */
-  const context = canvas.getContext('webgpu');
-  if (!context) {
-    throw new Error('WebGPU context is not created.');
-  }
-
-  // 1. create webGPU adapter and device
-  const { device, canvasFormat } = await createWebGPU();
+async function main(device: GPUDevice, context: GPUCanvasContext) {
+  // 1. create webGPU device and context.
 
   // 2. create vertex
   const { vertices, vertexBuffer, vertexBufferLayout } = createVertices(device);
 
   // 3. create vertex and fragment shaders
-
   const { cellShaderModule } = createShaders(device);
 
+  // 4. create computeShaders for simulations
   const { simulationShaderModule } = createComputeShader(device);
 
-  // 5. create bindGroup with uniform
+  // 5. create bindGroups and layout
   const { bindGroups, bindGroupLayout } = createBindGroup(device);
 
-  // 4. build up renderPipeline and other buffers.
+  // 6. build up renderPipeline and other buffers.
+  // get canvas format for texture.
+  const canvasFormat = navigator.gpu.getPreferredCanvasFormat();
   const { cellPipeline, pipelineLayout } = createRenderPipeline(
     device,
     canvasFormat,
@@ -70,67 +71,90 @@ async function main() {
     bindGroupLayout,
   );
 
+  // 7. create simulation pipeline
   const { simulationPipeline } = createComputePipeline(
     device,
     pipelineLayout,
     simulationShaderModule,
   );
 
-  // between `encoder.beginRenderPass` and `pass.end`
-  function renderPassCommands(configuredContext: GPUCanvasContext) {
-    function updateGrid() {
-      const encoder = device.createCommandEncoder();
-      const computePass = encoder.beginComputePass();
+  // 8. configure context and ready for rendering
+  context.configure({
+    device: device,
+    format: canvasFormat, // this configures the texture format used in webgpu
+    alphaMode: 'premultiplied',
+  });
 
-      // compute work
-      computePass.setPipeline(simulationPipeline);
-      computePass.setBindGroup(0, bindGroups[step % 2]);
+  function render() {
+    const encoder = device.createCommandEncoder();
 
-      // New lines
-      const workgroupCount = Math.ceil(GRID_SIZE / WORKGROUP_SIZE);
-      computePass.dispatchWorkgroups(workgroupCount, workgroupCount);
+    /**
+     * start compute shaders computing.
+     *
+     * this will compute the simulation result and save it to
+     * storage buffer for rendering data query
+     */
+    const computePass = encoder.beginComputePass();
+    computePass.setPipeline(simulationPipeline);
+    // switch between two bindGroups
+    computePass.setBindGroup(0, bindGroups[step % 2]);
 
-      computePass.end();
+    // set up concurrent computing groups
+    const workgroupCount = Math.ceil(GRID_SIZE / WORKGROUP_SIZE);
+    computePass.dispatchWorkgroups(workgroupCount, workgroupCount);
 
-      step++; // Increment the step count
+    computePass.end();
 
-      // start a render process.
-      const pass = encoder.beginRenderPass({
-        colorAttachments: [
-          {
-            view: configuredContext.getCurrentTexture().createView(),
-            loadOp: 'clear',
-            clearValue: { r: 0, g: 0, b: 0.4, a: 1 }, // or [0, 0, 0.4, 1]
-            storeOp: 'store',
-          },
-        ],
-      });
+    step++; // Increment the step count
 
-      // draw the grid
+    /**
+     ** render commands should be between `encoder.beginRenderPass` and `pass.end`
+     */
 
-      pass.setPipeline(cellPipeline);
+    /**
+     * start a render process.
+     *
+     * this will encode the render commands into what gpu can understand.
+     *
+     * after commands being encoded, send the commands to device to process.
+     */
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: context.getCurrentTexture().createView(),
+          loadOp: 'clear', // this will clear the screen every time onload
+          clearValue: { r: 0, g: 0, b: 0.4, a: 1 }, // or [0, 0, 0.4, 1]
+          storeOp: 'store', // save to screen
+        },
+      ],
+    });
 
-      pass.setVertexBuffer(0, vertexBuffer);
+    // start recoding the render pass commands
 
-      pass.setBindGroup(/* @group(0) index */ 0, bindGroups[step % 2]); // Updated!
+    // 1. setup pipeline
+    pass.setPipeline(cellPipeline);
+    // 2. setup vertex buffer
+    pass.setVertexBuffer(0, vertexBuffer);
+    // 3. setup bindGroup for shaders. switch between 2 bindGroups.
+    pass.setBindGroup(/* @group(0) index */ 0, bindGroups[step % 2]);
+    // 4. draw vertex instances
+    pass.draw(vertices.length / 2, /* instanceCount */ GRID_SIZE * GRID_SIZE); // draw 6 vertices for `instanceCount` times
 
-      pass.draw(vertices.length / 2, /* instanceCount */ GRID_SIZE * GRID_SIZE); // draw 6 vertices for `instanceCount` times
+    // stop recording the render pass commands
+    pass.end();
 
-      pass.end();
+    // generate the commandBuffer
+    const commandBuffer = encoder.finish();
+    // submit to rendering queue to start working.
+    device.queue.submit([commandBuffer]);
 
-      device.queue.submit([encoder.finish()]);
-    }
-
-    // Schedule updateGrid() to run repeatedly
-    setInterval(updateGrid, UPDATE_INTERVAL);
+    // repeated calling render function in every frame.
+    // you can setup a FPS limit by using`setInterval`
+    requestAnimationFrame(render);
   }
 
-  beginRenderPass(
-    device,
-    context,
-    canvasFormat,
-    renderPassCommands, // inject render commands
-  );
+  // 9. star rendering!
+  requestAnimationFrame(render);
 }
 
 export default App;

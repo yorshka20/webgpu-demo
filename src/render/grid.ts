@@ -1,4 +1,4 @@
-export const GRID_SIZE = 32;
+import { GRID_SIZE } from '../constants';
 
 export function createBindGroup(device: GPUDevice) {
   // Create a uniform buffer that describes the grid.
@@ -20,7 +20,10 @@ export function createBindGroup(device: GPUDevice) {
     entries: [
       {
         binding: 0,
-        visibility: GPUShaderStage.VERTEX | GPUShaderStage.COMPUTE,
+        visibility:
+          GPUShaderStage.VERTEX |
+          GPUShaderStage.COMPUTE |
+          GPUShaderStage.FRAGMENT, // ! this is where the tutorial gets wrong.
         buffer: {}, // Grid uniform buffer
       },
       {
@@ -105,10 +108,10 @@ export function createStorageBuffer(device: GPUDevice) {
   device.queue.writeBuffer(cellStateStorage[0], 0, cellStateArray);
 
   // Mark every other cell of the second grid as active.
-  for (let i = 0; i < cellStateArray.length; i++) {
-    cellStateArray[i] = i % 2;
+  for (let i = 0; i < cellStateArray.length; ++i) {
+    cellStateArray[i] = Math.random() > 0.8 ? 1 : 0;
   }
-  device.queue.writeBuffer(cellStateStorage[1], 0, cellStateArray);
+  device.queue.writeBuffer(cellStateStorage[0], 0, cellStateArray);
 
   // we will update the storageBuffer twice to make sure the update occurred step by step.
 
