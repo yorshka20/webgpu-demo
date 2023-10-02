@@ -189,7 +189,7 @@ export function createComputeShader(device: GPUDevice) {
   return { simulationShaderModule };
 }
 
-export function createRenderPipeline(
+export async function createRenderPipeline(
   device: GPUDevice,
   canvasFormat: GPUTextureFormat,
   vertexBufferLayout: GPUVertexBufferLayout,
@@ -204,7 +204,7 @@ export function createRenderPipeline(
   });
 
   // create render pipeline
-  const cellPipeline = device.createRenderPipeline({
+  const cellPipeline = await device.createRenderPipelineAsync({
     label: 'Cell pipeline',
     layout: pipelineLayout,
     vertex: {
@@ -229,13 +229,13 @@ export function createRenderPipeline(
   };
 }
 
-export function createComputePipeline(
+export async function createComputePipeline(
   device: GPUDevice,
   pipelineLayout: GPUPipelineLayout,
   simulationShaderModule: GPUShaderModule,
 ) {
   // Create a compute pipeline that updates the game state.
-  const simulationPipeline = device.createComputePipeline({
+  const simulationPipeline = await device.createComputePipelineAsync({
     label: 'Simulation pipeline',
     layout: pipelineLayout,
     compute: {

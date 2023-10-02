@@ -21,7 +21,7 @@ function App() {
     const { clientHeight } = document.documentElement;
     const s = clientHeight - 10;
     setSize(s);
-    setGridSize(Math.pow(s / 30, 2));
+    setGridSize(s / 5);
   }, []);
 
   const { device, context } = useWebGPU();
@@ -63,7 +63,7 @@ async function main(device: GPUDevice, context: GPUCanvasContext) {
   // 6. build up renderPipeline and other buffers.
   // get canvas format for texture.
   const canvasFormat = navigator.gpu.getPreferredCanvasFormat();
-  const { cellPipeline, pipelineLayout } = createRenderPipeline(
+  const { cellPipeline, pipelineLayout } = await createRenderPipeline(
     device,
     canvasFormat,
     vertexBufferLayout,
@@ -72,7 +72,7 @@ async function main(device: GPUDevice, context: GPUCanvasContext) {
   );
 
   // 7. create simulation pipeline
-  const { simulationPipeline } = createComputePipeline(
+  const { simulationPipeline } = await createComputePipeline(
     device,
     pipelineLayout,
     simulationShaderModule,
@@ -82,7 +82,7 @@ async function main(device: GPUDevice, context: GPUCanvasContext) {
   context.configure({
     device: device,
     format: canvasFormat, // this configures the texture format used in webgpu
-    alphaMode: 'premultiplied',
+    alphaMode: 'premultiplied', // make it transparent
   });
 
   function render() {
