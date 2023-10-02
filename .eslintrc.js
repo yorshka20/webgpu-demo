@@ -9,14 +9,6 @@ module.exports = {
   },
   ignorePatterns: ['dist', '.eslintrc.cjs'],
   parser: '@typescript-eslint/parser',
-  plugins: ['react-refresh'],
-  rules: {
-    'react-refresh/only-export-components': [
-      'warn',
-      { allowConstantExport: true },
-    ],
-  },
-  parser: '@typescript-eslint/parser',
   parserOptions: {
     ecmaFeatures: {
       jsx: true,
@@ -24,7 +16,12 @@ module.exports = {
     sourceType: 'module',
     ecmaVersion: 2021,
   },
-  plugins: ['@typescript-eslint', 'prettier'],
+  plugins: [
+    'react-refresh',
+    '@typescript-eslint',
+    'prettier',
+    'prettier-plugin-glsl',
+  ],
   extends: [
     'eslint:recommended',
     'plugin:react/recommended',
@@ -38,6 +35,10 @@ module.exports = {
     'prettier',
   ],
   rules: {
+    'react-refresh/only-export-components': [
+      'warn',
+      { allowConstantExport: true },
+    ],
     '@typescript-eslint/ban-ts-comment': [
       'error',
       { 'ts-ignore': 'allow-with-description' },
